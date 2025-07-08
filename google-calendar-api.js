@@ -105,8 +105,8 @@ app.get('/auth', (req, res) => {
     ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
     : 'http://localhost:4000/auth/google/callback';
   const authClient = new google.auth.OAuth2(
-    oAuth2Client._clientId,
-    oAuth2Client._clientSecret,
+    client_id,
+    client_secret,
     redirectUri
   );
   
