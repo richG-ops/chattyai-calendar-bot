@@ -129,6 +129,8 @@ app.get('/oauth2callback', async (req, res) => {
     if (process.env.GOOGLE_TOKEN) {
       // In production, you'd need to update the environment variable
       console.log('Authentication successful (production mode)');
+      console.log('IMPORTANT: Copy this token and add it as GOOGLE_TOKEN environment variable in Render:');
+      console.log(JSON.stringify(tokens));
     } else {
       // Development: Save to file
       fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
@@ -156,11 +158,14 @@ app.get('/auth/google/callback', async (req, res) => {
     oAuth2Client.setCredentials(tokens);
     
     // Save tokens
-    if (process.env.GOOGLE_TOKEN) {
-      // In production, you'd need to update the environment variable
-      console.log('Authentication successful (production mode)');
-      console.log('IMPORTANT: Copy this token and add it as GOOGLE_TOKEN environment variable in Render:');
+    if (process.env.NODE_ENV === 'production') {
+      // In production, log the token for manual copy
+      console.log('🎉 Authentication successful in production!');
+      console.log('📋 COPY THIS ENTIRE TOKEN JSON:');
+      console.log('==================================');
       console.log(JSON.stringify(tokens));
+      console.log('==================================');
+      console.log('👆 Add this as GOOGLE_TOKEN environment variable in Render');
     } else {
       // Development: Save to file
       fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
