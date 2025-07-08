@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
 
 module.exports = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
@@ -8,25 +9,39 @@ module.exports = async (req, res, next) => {
     const decoded = jwt.verify(token, 'your-super-secret-jwt-key-change-this-in-production');
     console.log('JWT decoded successfully:', decoded.api_key);
     
-    // Use mock tenant for local testing (credentials loaded from environment)
-    const tenant = {
-      id: 'mock-tenant-id',
-      name: 'Your Business',
-      api_key: decoded.api_key,
-      g_credentials: {
-        web: {
-          client_id: process.env.GOOGLE_CLIENT_ID || "mock-client-id",
-          client_secret: process.env.GOOGLE_CLIENT_SECRET || "REPLACE_WITH_ENV_VAR",
-          redirect_uris: ["http://localhost:3000/oauth2callback"]
-        }
-      },
-      g_token: {
-        access_token: process.env.GOOGLE_ACCESS_TOKEN || "mock-access-token",
-        scope: "https://www.googleapis.com/auth/calendar",
-        token_type: "Bearer",
-        expiry_date: Date.now() + 3600000,
-        refresh_token: process.env.GOOGLE_REFRESH_TOKEN || "mock-refresh-token"
+    // Load actual credentials and token from files
+    let credentials, googleToken;
+    
+    try {
+      // Load credentials
+      if (process.env.GOOGLE_CREDENTIALS) {
+        credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+      } else if (fs.existsSync('credentials.json')) {
+        credentials = JSON.parse(fs.readFileSync('credentials.json'));
+      } else {
+        throw new Error('No credentials found');
       }
+      
+      // Load token
+      if (process.env.GOOGLE_TOKEN) {
+        googleToken = JSON.parse(process.env.GOOGLE_TOKEN);
+      } else if (fs.existsSync('token.json')) {
+        googleToken = JSON.parse(fs.readFileSync('token.json'));
+      } else {
+        throw new Error('No token found');
+      }
+    } catch (error) {
+      console.error('Error loading Google credentials/token:', error);
+      return res.status(500).json({ error: 'Google authentication not configured' });
+    }
+    
+    // Create tenant with actual credentials
+    const tenant = {
+      id: 'local-tenant',
+      name: 'Local Business',
+      api_key: decoded.api_key,
+      g_credentials: credentials,
+      g_token: googleToken
     };
 
     req.tenant = tenant;

@@ -17,12 +17,23 @@ try {
   if (process.env.GOOGLE_CREDENTIALS) {
     // Production: Use environment variable
     CREDENTIALS = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+    console.log('✅ Loaded credentials from environment variable');
   } else {
     // Development: Use local file
-    CREDENTIALS = JSON.parse(fs.readFileSync('credentials.json'));
+    if (fs.existsSync('credentials.json')) {
+      CREDENTIALS = JSON.parse(fs.readFileSync('credentials.json'));
+      console.log('✅ Loaded credentials from local file');
+    } else {
+      console.error('❌ No credentials found!');
+      console.error('For production (Render): Set GOOGLE_CREDENTIALS environment variable');
+      console.error('For development: Create credentials.json file');
+      console.error('See DEPLOYMENT_GUIDE.md for setup instructions');
+      process.exit(1);
+    }
   }
 } catch (error) {
-  console.error('Error loading credentials:', error.message);
+  console.error('❌ Error loading credentials:', error.message);
+  console.error('Make sure your credentials are valid JSON format');
   process.exit(1);
 }
 
@@ -36,10 +47,15 @@ function loadAndSetCredentials() {
     if (process.env.GOOGLE_TOKEN) {
       // Production: Use environment variable
       tokens = JSON.parse(process.env.GOOGLE_TOKEN);
+      console.log('✅ Loaded token from environment variable');
     } else if (fs.existsSync(TOKEN_PATH)) {
       // Development: Use local file
       tokens = JSON.parse(fs.readFileSync(TOKEN_PATH));
+      console.log('✅ Loaded token from local file');
     } else {
+      console.log('⚠️ No token found - authentication required');
+      console.log('For production: Set GOOGLE_TOKEN environment variable');
+      console.log('For development: Visit /auth to authenticate');
       return false;
     }
     
@@ -47,13 +63,14 @@ function loadAndSetCredentials() {
     
     // Check if token is expired and we have a refresh token
     if (tokens.expiry_date && Date.now() >= tokens.expiry_date && tokens.refresh_token) {
-      console.log('Token expired, attempting to refresh...');
+      console.log('🔄 Token expired, attempting to refresh...');
       return refreshAccessToken();
     }
     
+    console.log('✅ Authentication successful');
     return true;
   } catch (error) {
-    console.error('Error loading credentials:', error);
+    console.error('❌ Error loading token:', error);
     return false;
   }
 }
@@ -83,8 +100,18 @@ async function refreshAccessToken() {
 
 // OAuth authentication endpoints (for local development)
 app.get('/auth', (req, res) => {
+  // Create a new OAuth2 client with the correct redirect URI based on environment
+  const redirectUri = process.env.NODE_ENV === 'production' 
+    ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
+    : 'http://localhost:4000/auth/google/callback';
+  const authClient = new google.auth.OAuth2(
+    oAuth2Client._clientId,
+    oAuth2Client._clientSecret,
+    redirectUri
+  );
+  
   // Always request offline access and force consent to ensure refresh token is provided
-  const authUrl = oAuth2Client.generateAuthUrl({
+  const authUrl = authClient.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
     prompt: 'consent'
@@ -115,6 +142,38 @@ app.get('/oauth2callback', async (req, res) => {
   }
 });
 
+// Add a callback endpoint for port 4000
+app.get('/auth/google/callback', async (req, res) => {
+  const { code } = req.query;
+  try {
+    // Create a new OAuth2 client with the correct redirect URI for the callback
+    const redirectUri = process.env.NODE_ENV === 'production' 
+      ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
+      : 'http://localhost:4000/auth/google/callback';
+    const callbackClient = new google.auth.OAuth2(client_id, client_secret, redirectUri);
+    
+    const { tokens } = await callbackClient.getToken(code);
+    oAuth2Client.setCredentials(tokens);
+    
+    // Save tokens
+    if (process.env.GOOGLE_TOKEN) {
+      // In production, you'd need to update the environment variable
+      console.log('Authentication successful (production mode)');
+      console.log('IMPORTANT: Copy this token and add it as GOOGLE_TOKEN environment variable in Render:');
+      console.log(JSON.stringify(tokens));
+    } else {
+      // Development: Save to file
+      fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens));
+      console.log('Authentication successful, tokens saved');
+    }
+    
+    res.send('Authentication successful! You can close this tab. Check the server logs for the token if in production mode.');
+  } catch (error) {
+    console.error('Error getting tokens:', error);
+    res.status(500).json({ error: 'Authentication failed', details: error.message });
+  }
+});
+
 // Initialize credentials
 loadAndSetCredentials();
 
@@ -128,10 +187,16 @@ function ensureAuth(req, res, next) {
 
 // Helper to create an OAuth2 client for a specific tenant
 function getOAuth2ClientForTenant(tenant) {
-  const { client_id, client_secret, redirect_uris } = tenant.g_credentials.web;
-  const oAuth2Client = new (require('googleapis').google.auth.OAuth2)(client_id, client_secret, redirect_uris[0]);
-  oAuth2Client.setCredentials(tenant.g_token);
-  return oAuth2Client;
+  // Handle both 'web' and 'installed' credential types
+  const creds = tenant.g_credentials.web || tenant.g_credentials.installed;
+  if (!creds) {
+    throw new Error('Invalid credentials structure');
+  }
+  
+  const { client_id, client_secret, redirect_uris } = creds;
+  const tenantOAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
+  tenantOAuth2Client.setCredentials(tenant.g_token);
+  return tenantOAuth2Client;
 }
 
 // GET /get-availability: Returns available 30-minute slots for the next 7 days

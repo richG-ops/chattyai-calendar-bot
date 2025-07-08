@@ -2,10 +2,10 @@
 .env
 .env.local
 .env.production
+.env.test
 
 # Google credentials and tokens
 token.json
-credentials.json
 
 # Dependencies
 node_modules/
@@ -61,4 +61,7 @@ jspm_packages/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Secrets and credentials
+credentials.json 
