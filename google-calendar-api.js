@@ -40,6 +40,13 @@ try {
 const { client_secret, client_id, redirect_uris } = CREDENTIALS.installed || CREDENTIALS.web;
 const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
 
+// Add debug logging for credentials
+console.log('📋 Credential Details:');
+console.log(`Client ID: ${client_id ? client_id.substring(0, 20) + '...' : 'NOT FOUND'}`);
+console.log(`Client Secret: ${client_secret ? '***hidden***' : 'NOT FOUND'}`);
+console.log(`Redirect URIs: ${redirect_uris ? redirect_uris.join(', ') : 'NOT FOUND'}`);
+console.log(`Credential Type: ${CREDENTIALS.web ? 'web' : CREDENTIALS.installed ? 'installed' : 'UNKNOWN'}`);
+
 // Function to load and set credentials with refresh handling
 function loadAndSetCredentials() {
   try {
@@ -100,26 +107,46 @@ async function refreshAccessToken() {
 
 // OAuth authentication endpoints (for local development)
 app.get('/auth', (req, res) => {
-  // Extract credentials for this auth request
-  const { client_secret: authSecret, client_id: authId } = CREDENTIALS.installed || CREDENTIALS.web;
-  
-  // Create a new OAuth2 client with the correct redirect URI based on environment
-  const redirectUri = process.env.NODE_ENV === 'production' 
-    ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
-    : 'http://localhost:4000/auth/google/callback';
-  const authClient = new google.auth.OAuth2(
-    authId,
-    authSecret,
-    redirectUri
-  );
-  
-  // Always request offline access and force consent to ensure refresh token is provided
-  const authUrl = authClient.generateAuthUrl({
-    access_type: 'offline',
-    scope: SCOPES,
-    prompt: 'consent'
-  });
-  res.send(`<a href="${authUrl}">Authenticate with Google</a>`);
+  try {
+    // Extract credentials for this auth request
+    const creds = CREDENTIALS.installed || CREDENTIALS.web;
+    if (!creds) {
+      console.error('❌ No valid credentials found in CREDENTIALS object');
+      return res.status(500).send('Server configuration error: No credentials found');
+    }
+    
+    const { client_secret: authSecret, client_id: authId } = creds;
+    
+    if (!authId || !authSecret) {
+      console.error('❌ Missing client_id or client_secret');
+      console.error('Credentials structure:', JSON.stringify(CREDENTIALS, null, 2));
+      return res.status(500).send('Server configuration error: Invalid credentials');
+    }
+    
+    // Create a new OAuth2 client with the correct redirect URI based on environment
+    const redirectUri = process.env.NODE_ENV === 'production' 
+      ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
+      : 'http://localhost:4000/auth/google/callback';
+    
+    console.log(`🔐 OAuth Request - Redirect URI: ${redirectUri}`);
+    
+    const authClient = new google.auth.OAuth2(
+      authId,
+      authSecret,
+      redirectUri
+    );
+    
+    // Always request offline access and force consent to ensure refresh token is provided
+    const authUrl = authClient.generateAuthUrl({
+      access_type: 'offline',
+      scope: SCOPES,
+      prompt: 'consent'
+    });
+    res.send(`<a href="${authUrl}">Authenticate with Google</a>`);
+  } catch (error) {
+    console.error('Error in /auth endpoint:', error);
+    res.status(500).json({ error: 'Failed to authenticate', details: error.message });
+  }
 });
 
 app.get('/oauth2callback', async (req, res) => {
@@ -150,14 +177,35 @@ app.get('/oauth2callback', async (req, res) => {
 // Add a callback endpoint for port 4000
 app.get('/auth/google/callback', async (req, res) => {
   const { code } = req.query;
+  
+  if (!code) {
+    console.error('❌ No authorization code received');
+    return res.status(400).send('Error: No authorization code received');
+  }
+  
   try {
     // Extract credentials for this callback
-    const { client_secret: callbackSecret, client_id: callbackId } = CREDENTIALS.installed || CREDENTIALS.web;
+    const creds = CREDENTIALS.installed || CREDENTIALS.web;
+    if (!creds) {
+      console.error('❌ No valid credentials found in callback');
+      return res.status(500).send('Server configuration error: No credentials found');
+    }
+    
+    const { client_secret: callbackSecret, client_id: callbackId } = creds;
+    
+    if (!callbackId || !callbackSecret) {
+      console.error('❌ Missing client_id or client_secret in callback');
+      return res.status(500).send('Server configuration error: Invalid credentials');
+    }
     
     // Create a new OAuth2 client with the correct redirect URI for the callback
     const redirectUri = process.env.NODE_ENV === 'production' 
       ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
       : 'http://localhost:4000/auth/google/callback';
+    
+    console.log(`🔐 OAuth Callback - Using redirect URI: ${redirectUri}`);
+    console.log(`🔐 Client ID: ${callbackId.substring(0, 20)}...`);
+    
     const callbackClient = new google.auth.OAuth2(callbackId, callbackSecret, redirectUri);
     
     const { tokens } = await callbackClient.getToken(code);
