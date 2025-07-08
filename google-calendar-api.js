@@ -100,13 +100,16 @@ async function refreshAccessToken() {
 
 // OAuth authentication endpoints (for local development)
 app.get('/auth', (req, res) => {
+  // Extract credentials for this auth request
+  const { client_secret: authSecret, client_id: authId } = CREDENTIALS.installed || CREDENTIALS.web;
+  
   // Create a new OAuth2 client with the correct redirect URI based on environment
   const redirectUri = process.env.NODE_ENV === 'production' 
     ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
     : 'http://localhost:4000/auth/google/callback';
   const authClient = new google.auth.OAuth2(
-    client_id,
-    client_secret,
+    authId,
+    authSecret,
     redirectUri
   );
   
@@ -148,11 +151,14 @@ app.get('/oauth2callback', async (req, res) => {
 app.get('/auth/google/callback', async (req, res) => {
   const { code } = req.query;
   try {
+    // Extract credentials for this callback
+    const { client_secret: callbackSecret, client_id: callbackId } = CREDENTIALS.installed || CREDENTIALS.web;
+    
     // Create a new OAuth2 client with the correct redirect URI for the callback
     const redirectUri = process.env.NODE_ENV === 'production' 
       ? 'https://chattyai-calendar-bot-1.onrender.com/auth/google/callback'
       : 'http://localhost:4000/auth/google/callback';
-    const callbackClient = new google.auth.OAuth2(client_id, client_secret, redirectUri);
+    const callbackClient = new google.auth.OAuth2(callbackId, callbackSecret, redirectUri);
     
     const { tokens } = await callbackClient.getToken(code);
     oAuth2Client.setCredentials(tokens);
